@@ -1,0 +1,144 @@
+---
+title: "Spatial Autocorrelation"
+author: "Sariffuddin"
+date: "`r Sys.Date()`"
+output: rmdformats::readthedown
+---
+
+Further reference: https://rpubs.com/quarcs-lab/tutorial-spatial-regression
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r library, message=FALSE, warning=FALSE}
+library(cluster)  
+library(stats)
+library(sp)
+library(spdep)
+library(car)
+library(corrplot)
+library(lmtest)
+library(tidyverse)
+library(spatialreg)
+library(vtable)
+library(readxl)
+```
+
+# A. Spatial data
+
+```{r}
+Semarang_fix <- read_excel("Semarang_fix.xlsx")
+Semarang_fix %>% dplyr::distinct(lat, lng, .keep_all = TRUE)
+Semarang_fix$lng <- as.numeric(Semarang_fix$lng)
+Semarang_fix$lat <- as.numeric(Semarang_fix$lat)
+Spat.data<-Semarang_fix
+correlation<-as.data.frame(cbind( 
+       Spat.data$Kamar,
+       Spat.data$Bangunan,
+       Spat.data$Tanah,
+       Spat.data$dis_SD,
+       Spat.data$dis_SMP,
+       Spat.data$dis_SMA,
+       Spat.data$harga))
+M<-cor(correlation)
+M
+corrplot(M, method="color")
+```
+
+```{r}
+coordinates(Spat.data) <- ~ lat + lng
+```
+
+```{r}
+plot(Spat.data$lat, Spat.data$lng)
+```
+
+# B. Spatial Autocorrelation
+
+```{r}
+reg = log(Spat.data$harga) ~ 
+               log(Spat.data$Kamar) + 
+               log(Spat.data$Bangunan) +
+               log(Spat.data$Tanah) + 
+               log(Spat.data$dis_SD)# +
+               #log(Spat.data$dis_SMP) +
+               #log(Spat.data$dis_SMA)
+```
+
+# C. Ordinary least squares (OLS)
+
+```{r}
+reg.OLS=lm(reg,data=Spat.data)
+summary(reg.OLS)
+```
+
+## C.1 Spatial Weights
+
+```{r}
+knea <- knearneigh(coordinates(Spat.data), longlat = TRUE, k = 5)
+queen.nb <- knn2nb(knea)
+```
+
+```{r}
+queen.listw = nb2listw(queen.nb) 
+listw1 = queen.listw
+```
+
+## C.2 Detecting multicollinearity
+
+```{r}
+car::vif(reg.OLS)
+```
+
+## C.3 Moran Test
+
+```{r}
+lm.morantest(reg.OLS,listw1) 
+```
+
+## C.4 Lagrange Multiplier (LM) test
+
+```{r}
+lm.RStests(reg.OLS,listw1,test=c(
+  "LMerr", 
+  "LMlag", 
+  "RLMerr", 
+  "RLMlag", 
+  "SARMA"))
+```
+
+# D. Spatial Autoregressive (SAR)
+
+```{r}
+reg.SAR <- lagsarlm(reg, 
+                    data = Spat.data, 
+                    listw1)
+summary(reg.SAR)
+
+impacts(reg.SAR, 
+        listw = listw1)
+
+#summary(impacts(reg.SAR, listw=listw1, R=50),zstats=TRUE)
+```
+
+# E. SLX Spatially Lagged X
+
+```{r}
+#reg.SLX <- lmSLX(reg, data = Spat.data, listw1)
+#summary(reg.SLX)
+```
+
+# F. Spatial Error Model (SEM)
+
+```{r}
+#reg.SEM <- errorsarlm(reg, data = Spat.data, listw1)
+#summary(reg.SEM)
+```
+
+# G. Spatial Durbin Model (SDM)
+
+```{r}
+#reg.SEM <- errorsarlm(reg, data = Spat.data, listw1)
+#summary(reg.SEM)
+```
